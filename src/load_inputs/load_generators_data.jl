@@ -25,7 +25,9 @@ function load_generators_data!(setup::Dict, path::AbstractString, inputs_gen::Di
 	inputs_gen["STOR_SYMMETRIC"] = gen_in[gen_in.STOR.==1,:R_ID]
 	# Set of storage resources with asymmetric (separte) charge/discharge capacity components
 	inputs_gen["STOR_ASYMMETRIC"] = gen_in[gen_in.STOR.==2,:R_ID]
-	# Set of all storage resources
+	# Set of storage resources with asymmetric (separte) charge/discharge capacity components
+	inputs_gen["STOR_TES"] = gen_in[gen_in.STOR.==3,:R_ID]
+	# Set of all storage resources (not including DAC_TES, this has its own set of constraints)
 	inputs_gen["STOR_ALL"] = union(inputs_gen["STOR_SYMMETRIC"],inputs_gen["STOR_ASYMMETRIC"])
 
 	# Set of storage resources with long duration storage capabilitites
@@ -115,14 +117,15 @@ function load_generators_data!(setup::Dict, path::AbstractString, inputs_gen::Di
 
 	# Retrofit Information
 	if !isempty(inputs_gen["RETRO"]) # If there are any retrofit technologies in consideration, read relevant data
-		inputs_gen["NUM_RETROFIT_SOURCES"] = gen_in[!,:Num_RETRO_Sources]   # Number of retrofit sources for this technology (0 if not a retrofit technology)
+		inputs_gen["NUM_RETROFIT_SOURCES"] = gen_in[!,:Num_RETRO_Sources]   # Number of technologies to retrofit this resource with (0 if there is no retrofit technology)
 		max_retro_sources = maximum(inputs_gen["NUM_RETROFIT_SOURCES"])
 
+		# just used to loop through and get all technologies that can be retrofitted onto all resources
 		source_cols = [ Symbol(string("Retro",i,"_Source")) for i in 1:max_retro_sources ]
 		efficiency_cols = [ Symbol(string("Retro",i,"_Efficiency")) for i in 1:max_retro_sources ]
 		inv_cap_cols = [ Symbol(string("Retro",i,"_Inv_Cost_per_MWyr")) for i in 1:max_retro_sources ]
 
-		sources = [ gen_in[!,c] for c in source_cols ]
+		sources = [ gen_in[!,c] for c in source_cols ] #  matrix represents whether each technology(rows) can be retrofit onto each resource(cols), value is the name of the technology
 		inputs_gen["RETROFIT_SOURCES"] = [ [ sources[i][y] for i in 1:max_retro_sources if sources[i][y] != "None" ] for y in 1:G ]  # The origin technologies that can be retrofitted into this new technology
 		inputs_gen["RETROFIT_SOURCE_IDS"] = [ [ findall(x->x==sources[i][y],inputs_gen["RESOURCES"])[1] for i in 1:max_retro_sources if sources[i][y] != "None" ] for y in 1:G ] # The R_IDs of these origin technologies
 

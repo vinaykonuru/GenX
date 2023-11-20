@@ -1,2 +1,2 @@
-Resource,R_ID,Zone,NEW_CAP,Deployment,CF,DAC_COMMIT,Min_DAC,Existing_Cap_CO2,Cap_Size,Fix_Cost_per_tCO2_yr,Energy_Fix_Cost_per_yr,Var_OM_Cost_per_tCO2,DAC_Fuel_Capture_Rate,CO2_Transport_Storage_Per_t,DAC_heat_resource,Heat_MMBTU_per_CO2_metric_ton,Electricity_source,Electricity_MWh_per_CO2_metric_ton,Up_Time,Down_Time
-NUC_DAC_1,1,1,1,1.00E+06,0.95,1,0.1,0,10000,800,0.00E+00,40,1,0,Nuclear,9.8,Grid,0.3,24,24
+Resource,R_ID,Zone,NEW_CAP,Deployment,DAC_COMMIT,Min_DAC,Existing_Cap_CO2,Cap_Size,Fix_Cost_per_tCO2_yr,Energy_Fix_Cost_per_yr,Var_OM_Cost_per_tCO2,DAC_Fuel_Capture_Rate,CO2_Transport_Storage_Per_t,DAC_heat_resource,Heat_MMBTU_per_CO2_metric_ton,Electricity_source,Electricity_MWh_per_CO2_metric_ton,Up_Time,Down_Time
+TES_DAC,1,1,1,1.00E+06,0,0.1,0,10000,800,1.47E+07,40,1,0,TES,9.8,Grid,0.3,24,24

@@ -27,10 +27,14 @@ function load_dac_data!(setup::Dict, path::AbstractString, inputs::Dict)
 
 	# Add Resource IDs after reading to prevent user errors - THIS CODE HAS BEEN CHANGED
 	dac_in[!,:DAC_ID] = dac_in.R_ID
-
+    # DAC
+    inputs["DAC_NUCLEAR"] = dac_in[dac_in.DAC_heat_resource.=="NUCLEAR", :R_ID]
+    # DAC_STOR is the set of DAC facilities using TES as their main heat source
+    inputs["DAC_TES"] = dac_in[dac_in.DAC_heat_resource.=="TES", :R_ID] # DAC_ID
 	# Store DataFrame of dac input data for use in model
 	inputs["dfDac"] = dac_in
-
+    inputs["DAC"] = dac_in.R_ID
+    
     # Number of resources
 	#inputs["D"] = length(collect(skipmissing(dac_in[!,:R_ID])))
 
@@ -82,7 +86,7 @@ function load_dac_data!(setup::Dict, path::AbstractString, inputs::Dict)
 
 	# Store DataFrame of dac input data for use in model
 	inputs["Dac_params"] = dac_params
-
+    
     # heat extraction per percent steam diversion is in MW thermal
 
     println(filename * " Successfully Read!")

@@ -17,11 +17,13 @@ received this license file.  If not, see <http://www.gnu.org/licenses/>.
 @doc raw"""
 	DAC
 """
-
-function dac!(EP::Model, inputs::Dict, setup::Dict)
-
-	println("DAC module")
-    
+# to do:
+# include the CO2 of the DAC heat by making an expression multiplying vCHARGE_TES by the CO2 on the grid electricity
+# i don't know if there is a value for the CO2 of electricity by zone, might need to make an assumption for now
+# reincorporate CF
+# reintegerate DAC_HEAT for nuclear option, currenlty just using eDAC_heat
+function dac!(EP::Model, inputs::Dict, setup::Dict)    
+	println("DAC Resources Module")
 
 	dfDac = inputs["dfDac"]
     
@@ -35,88 +37,77 @@ function dac!(EP::Model, inputs::Dict, setup::Dict)
     Dac_params = inputs["Dac_params"]
 
     DAC_ID = dfDac[!,:DAC_ID]  # collect ids
+
     G_DAC = length(collect(skipmissing(dfDac[!,:R_ID])))  # number of DAC types
 
     dfGen = inputs["dfGen"]   #generator data
 
-    nuclear_dac = dfDac[dfDac.DAC_heat_resource.=="Nuclear", :R_ID]           #subset of nuclear dac facilities
-
-    # fuel cost
-    fuel_cost = inputs["fuel_costs"] 
-    fuel_CO2 = inputs["fuel_CO2"]
-
-    nuclear = inputs["nuclear"]              #subset of nuclear power plants
-
     Max_Steam_Diversion_Per_Plant = Dac_params["Max_Steam_Diversion_Per_Plant"]    #maximum allowed share of steam diverted
-    Heat_extraction_per_percent_steam_diversion = Dac_params["Heat_extraction_per_percent_steam_diversion"]  #heat available from extraction
+    Heat_extraction_per_percent_steam_diversion = Dac_params["Heat_extraction_per_percent_steam_diversion"]  #heat available from extraction (nuclear value)
     power_heat_ratio = Dac_params["Power_Heat_Ratio"]   #penalty per gj of steam diversion
     MW_to_GJ_conversion = Dac_params["MW_to_GJ_conversion"]   #3.6
     HX_cost_multiplier = Dac_params["HX_cost_multiplier"]   #from HX costing and steam extraction
     HX_cost_constant = Dac_params["HX_cost_constant"]   #from HX costing and steam extraction
-
     gj_to_mmbtu_conversion = 0.948
 
-    #decision variables
+
+    DAC_NUCLEAR = inputs["DAC_NUCLEAR"]           # subset of nuclear dac facilities
+    DAC_TES = inputs["DAC_TES"]                   # subset of TES dac facilites by DAC_ID (R_ID as listed in DAC data)
+    DAC = inputs["DAC"]
+    # fuel cost
+    fuel_cost = inputs["fuel_costs"] 
+    fuel_CO2 = inputs["fuel_CO2"]
+
+    # VARIABLES
     # vCO2_DAC: the amount of hourly capture by a DAC facility, metric ton CO2/h. 
     # vCAP_DAC: the ANNUAL removal capacity of a DAC facility, metric ton CO2
-    @variables(EP, begin
-    vCO2_DAC[y in DAC_ID,t = 1:T] >= 0
-    vsteam_heat_DAC[t=1:T, z = 1:Z] >= 0   #MW thermal directed for DAC
-    vHX_DAC[y in DAC_ID] >= 0         #Maximum heat exchanger capacity
-    vCAP_DAC[y in DAC_ID] >= 0   
-    end)
 
     # DAC facility will either take heat (from natural gas) and electricity (from grid) as input, and produce negative co2 as write_outputs
     # heat consumption from heat resources, MMBTU/t CO2
-    @expression(EP, eDAC_heat_consumption[y in DAC_ID, t = 1:T], vCO2_DAC[y,t] * dfDac[y,:Heat_MMBTU_per_CO2_metric_ton])
-    
-    #nuclear heat available in GJ in each zone at each hour as a function of generation, this heat can be used for DAC
-    for z in 1:Z
-        nuke_dac = intersect(nuclear_dac, dfDac[dfDac[!,:Zone].==z,:R_ID])
-        nuke_gen = intersect(nuclear, dfGen[dfGen[!,:Zone].==z,:R_ID])
-
-        @constraints(EP, begin
-            [t in 1:T], sum(EP[:eDAC_heat_consumption][y, t] for y in nuke_dac) == sum(vsteam_heat_DAC[t,zz] for zz in z)*MW_to_GJ_conversion
-        end)
-
-        @constraints(EP, begin
-            [t = 1:T], sum(vsteam_heat_DAC[t, zz] for zz in z) .<= sum(vHX_DAC[y] for y in nuke_dac)   # heat exchanger maximum thermal capacity is max steam diversion you can do 
-        end)
-
-        @constraints(EP, begin
-            [t in 1:T], sum(EP[:vP][y,t] for y in nuke_gen) + sum(vsteam_heat_DAC[t,zz] for zz in z)*power_heat_ratio  .<= sum(EP[:eTotalCap][yy] for yy in nuke_gen)
-        end)
-
-        # heat_nuclear = Max_Steam_Diversion_Per_Plant*Heat_extraction_per_percent_steam_diversion*MW_to_GJ_conversion*sum(EP[:eTotalCap][yy] for yy in nuke_gen)   #where TotalCap is the capacity of AP1000 plants built in that zone
-
-        # @constraints(EP, begin
-        #     [t in 1:T], sum(EP[:eDAC_heat_consumption][y, t] for y in nuke_dac) .<= heat_nuclear
-        # end)
-    end
-
-    @constraint(EP, cDAC_steam_max, sum(vHX_DAC[y] for y in DAC_ID) .<= Max_Steam_Diversion_Per_Plant*sum(EP[:eTotalCap][yy] for yy in nuclear)*Heat_extraction_per_percent_steam_diversion)    #max heat exchanging is 40% steam diversion from all plants  
+    @variables(EP, begin
+    vCO2_DAC[y in DAC_ID,t = 1:T] >= 0
+    # vHEAT_DAC[y in DAC_ID, t=1:T] >= 0   #MW thermal directed for DAC 
+    vHX_DAC[y in DAC_ID] >= 0         #Maximum heat exchanger capacity
+    vCAP_DAC[y in DAC_ID] >= 0   
+    end)
+    # heat consumption MMBTU/ tCO2
+    @expression(EP, eDAC_heat[y in DAC_ID, t = 1:T], vCO2_DAC[y,t] * dfDac[y,:Heat_MMBTU_per_CO2_metric_ton])
+        
+    # the electricity consumption for DAC, MWh/t CO2
+    @expression(EP, eDAC_elec[y in DAC_ID, t = 1:T], vCO2_DAC[y,t] * dfDac[y,:Electricity_MWh_per_CO2_metric_ton])
 
     # the use of heat resources (e.g., natural gas) may result in additional CO2 emissions as DAC may not capture the CO2 from the heat resources, the co2 content from heat resouces times (1 - capture rate) = emitted co2 from heat resource
-    @expression(EP, eDAC_heat_CO2[y in DAC_ID, t = 1:T],  eDAC_heat_consumption[y,t]* fuel_CO2[dfDac[y,:DAC_heat_resource]] * (1 - dfDac[y, :DAC_Fuel_Capture_Rate]))  
+    # for TES, we don't use a heat resource; we use power from the grid
+    # @expression(EP, eDAC_heat_CO2[y in DAC_ID, t = 1:T],  eDAC_heat[y,t]*fuel_CO2[dfDac[y,:DAC_heat_resource]] * (1 - dfDac[dfDac.DAC_ID.==y, :DAC_Fuel_Capture_Rate]))  
 
-    # the electricity consumption for DAC, MWh/t CO2
-    @expression(EP, eDAC_power[y in DAC_ID, t = 1:T], vCO2_DAC[y,t] * dfDac[y,:Electricity_MWh_per_CO2_metric_ton])
+    if !isempty(DAC_NUCLEAR)
+        dac_nuclear!() # method to add constraints for nuclear colocated with DAC
 
+        # #but nuclear dac reduces nuclear generation accordingly if steam diverted 
+        # @expression(EP, ePowerReductionnuclearheat[t=1:T, z=1:Z], 
+        #     power_heat_ratio*(1/MW_to_GJ_conversion)*sum(EP[:eDAC_heat_consumption][y, t] for y in intersect(nuclear_dac, dfDac[dfDac[!,:Zone].==z,:R_ID])))   #this is from the power loss to heat gain ratio from hongxi   
+        
+        # # ## make sure that this penalty is actually applied to the power plant at each hour
+        # # @constraint(EP, cNuclearPenalty[t=1:T], sum(EP[:vP][y,t] for y in nuclear) .>= sum(EP[:ePowerReductionnuclearheat][t,z] for z in 1:Z))
+
+        # #finally add it to power balance to reflect that additional load
+        # EP[:ePowerBalance] = EP[:ePowerBalance] - ePowerReductionnuclearheat
+        # @constraint(EP, cDAC_steam_max, sum(vHX_DAC[y] for y in DAC_ID) .<= Max_Steam_Diversion_Per_Plant*sum(EP[:eTotalCap][yy] for yy in nuclear)*Heat_extraction_per_percent_steam_diversion)    #max heat exchanging is 40% steam diversion from all plants  
+
+    end
+    if !isempty(DAC_TES)
+        dac_TES!(EP, inputs, setup) # method to add constraints for TES colocated with DAC
+    end
+    println("test 4")
+    
     # the power used for DAC must also go into a power balance equation
-	@expression(EP, ePowerBalanceDAC[t=1:T, z=1:Z], sum(eDAC_power[y,t] for y in intersect(dfDac[dfDac[!,:Zone].==z,:][!,:DAC_ID])))
-    EP[:ePowerBalance] = EP[:ePowerBalance] - ePowerBalanceDAC
+	@expression(EP, ePowerBalanceDAC[t=1:T, z=1:Z], sum(eDAC_elec[y,t] for y in (dfDac[dfDac[!,:Zone].==z,:][!,:DAC_ID])))
     
-    # #but nuclear dac reduces nuclear generation accordingly if steam diverted 
-    @expression(EP, ePowerReductionnuclearheat[t=1:T, z=1:Z], 
-        power_heat_ratio*(1/MW_to_GJ_conversion)*sum(EP[:eDAC_heat_consumption][y, t] for y in intersect(nuclear_dac, dfDac[dfDac[!,:Zone].==z,:R_ID])))   #this is from the power loss to heat gain ratio from hongxi   
+    EP[:ePowerBalance] -= (ePowerBalanceDAC)
     
-    # # ## make sure that this penalty is actually applied to the power plant at each hour
-    # # @constraint(EP, cNuclearPenalty[t=1:T], sum(EP[:vP][y,t] for y in nuclear) .>= sum(EP[:ePowerReductionnuclearheat][t,z] for z in 1:Z))
-
-    # #finally add it to power balance to reflect that additional load
-    # EP[:ePowerBalance] = EP[:ePowerBalance] - ePowerReductionnuclearheat
-    
-
+    @expression(EP, ePowerBalanceDAC_TES[t=1:T, z=1:Z], sum(EP[:vCHARGE_TES][y,t] for y in (dfDac[dfDac[!,:Zone].==z,:][!,:DAC_ID])))
+	EP[:ePowerBalance] -= (ePowerBalanceDAC_TES)
+    println("test 5")
     #---------------------------------- add up cost ---------------------------------------
     # Fixed Cost
     # Combine CAPEX and FOM into annualized Fixed Cost
@@ -132,7 +123,7 @@ function dac!(EP::Model, inputs::Dict, setup::Dict)
 	@expression(EP, eTotalCFixedDAC_Energy, sum(eCFixed_DAC_Energy[y] for y in DAC_ID))
 	EP[:eObj] += eTotalCFixedDAC_Energy
 
-
+    println("test 6")
     #heatpump cost in case of solid sorbent grid based - THIS IS ALL INCORPORATED IN THE Fix_Cost_per_tCO2_yr IN THE DAC SHEET FOR ELECTRIC HEAT PUMP SORBENT DAC BUT SHOWN BELOW TO REFLECT HOW THE 14 NUMBER CAME ABOUT
     # heatpump_cost_perMW = 0.5e6  #half a million per MW of heat pump
     # heatpump_mw_pertco2 = 2.72 #2.72 MW thermal per tco2 which is based on 9.8 GJ per tco2 from young et al and conversion using 0.2778 gj to mw conversion
@@ -147,7 +138,9 @@ function dac!(EP::Model, inputs::Dict, setup::Dict)
     # Variable cost
     omega = inputs["omega"]
     # the total variable cost (heat cost + non-fuel vom cost) for DAC y at time t, $/t CO2  
-    @expression(EP, eCDAC_Variable[y in DAC_ID, t = 1:T],  (eDAC_heat_consumption[y,t]*fuel_cost[dfDac[y,:DAC_heat_resource]][t]*gj_to_mmbtu_conversion + dfDac[y,:Var_OM_Cost_per_tCO2]*vCO2_DAC[y,t]))  
+    
+    # cost for Fuels should be included in the respective DAC type function
+    @expression(EP, eCDAC_Variable[y in DAC_ID, t = 1:T],  (dfDac[y,:Var_OM_Cost_per_tCO2]*vCO2_DAC[y,t]))  
 
     # Cost associated with variable costs for DAC for the whole year
     @expression(EP, eCTotalVariableDACT[y in DAC_ID], sum(omega[t] * eCDAC_Variable[y,t] for t in 1:T ))
@@ -158,9 +151,9 @@ function dac!(EP::Model, inputs::Dict, setup::Dict)
     EP[:eObj] += eCTotalVariableDAC
 
     # unit commitment variables for DAC
-    
-    if setup["UCommit"] > 0
-        DAC_COMMIT = dfDac[dfDac[!,:DAC_COMMIT] .== 1, :R_ID]
+    DAC_COMMIT = dfDac[dfDac[!,:DAC_COMMIT] .== 1, :R_ID]
+
+    if setup["UCommit"] > 0 && !isempty(DAC_COMMIT)
         @variables(EP, begin
             vCOMMIT_DAC[y in DAC_COMMIT, t=1:T] >= 0 # commitment status
             vSTART_DAC[y in DAC_COMMIT, t=1:T] >= 0 # startup
@@ -194,7 +187,7 @@ function dac!(EP::Model, inputs::Dict, setup::Dict)
          end)
 
 
-        	# Commitment state constraint linking startup and shutdown decisions (Constraint #4)
+        # Commitment state constraint linking startup and shutdown decisions (Constraint #4)
 	    p = hours_per_subperiod
         @constraints(EP, begin
             [y in DAC_ID, t in 1:T], vCOMMIT_DAC[y,t] == vCOMMIT_DAC[y, hoursbefore(p, t, 1)] + vSTART_DAC[y,t] - vSHUT_DAC[y,t]
@@ -218,18 +211,25 @@ function dac!(EP::Model, inputs::Dict, setup::Dict)
     #max annual capacity constraint for DAC
     # Constraint on maximum annual DAC removal (if applicable) [set input to -1 if no constraint on maximum capacity]
 	# DEV NOTE: This constraint may be violated in some cases where Existing_Cap_MW is >= Max_Cap_MW and lead to infeasabilty
-    @expression(EP, DAC_removals_hourly[y = 1:G_DAC], sum(vCO2_DAC[y, t] for t in 1:T))
+    @expression(EP, DAC_removals_hourly[y in DAC], sum(vCO2_DAC[y, t] for t in 1:T))
     #@constraint(EP, cDAC_removal, sum(DAC_removals_hourly[y] for y in 1:G_DAC) ==  sum(dfDac[y, :Deployment] for y in 1:G_DAC))
 
-    @constraint(EP, cDAC_CF, sum(DAC_removals_hourly[y] for y in 1:G_DAC) ==  sum(vCAP_DAC[y] * dfDac[y, :CF]  for y in 1:G_DAC))
+    # no CF for current run
+    # @constraint(EP, cDAC_CF, sum(DAC_removals_hourly[y] for y in DAC) ==  sum(vCAP_DAC[y] * dfDac[y, :CF]  for y in DAC))
 
-    @constraint(EP, cDACRemoval, sum(DAC_removals_hourly[y] for y in 1:G_DAC) >=  sum(dfDac[y, :Deployment] for y in 1:G_DAC))
-
+    # total DAC removals must be greater than the minimum DAC deployment for each DAC type(1MT)
+    @constraint(EP, cDACRemoval, sum(DAC_removals_hourly[y] for y in DAC) >=  sum(dfDac[y, :Deployment] for y in DAC))
+    # can't remove more CO2 than the capacity, should force new build capacity
+    @constraint(EP, cDACRemovalCapacity[y in DAC, t in 1:T], vCO2_DAC[y,t] <= vCAP_DAC[y])
+    # can't pull more heat than is in the TES
+    @constraint(EP, cHeatBalance[y in DAC_TES, t in 1:T], eDAC_heat[y,t] <= EP[:vS_TES][y,t])
     #@constraint(EP, cDAC, sum(vCAP_DAC[y] for y in 1:G_DAC) >=  sum(dfDac[y, :Deployment] for y in 1:G_DAC))
-
+    println("test 7")
     # get the CO2 balance 
     # the net negative CO2 for each DAC y at each hour t, CO2 emissions from heat consumption minus CO2 captured by DAC = net negative emissions
-    @expression(EP, eCO2_DAC_net[y in DAC_ID, t = 1:T], (eDAC_heat_CO2[y,t] - vCO2_DAC[y,t]) )  
+    # @expression(EP, eCO2_DAC_net[y in DAC_ID, t = 1:T], (eDAC_heat_CO2[y,t] - vCO2_DAC[y,t]) )  
+    @expression(EP, eCO2_DAC_net[y in DAC_ID, t = 1:T], (vCO2_DAC[y,t]) )  
+
     # the net negative CO2 from all the DAC facilities
     @expression(EP, eCO2_DAC_net_ByZoneT[z = 1:Z, t = 1:T], 
         sum(eCO2_DAC_net[y, t] for y in dfDac[(dfDac[!, :Zone].==z), :DAC_ID]))  
@@ -253,10 +253,11 @@ function dac!(EP::Model, inputs::Dict, setup::Dict)
     # sum of CO2 sequestration costs.
     @expression(EP, eCTotalCO2TS, sum(eCCO2_TS_ByZone[z] for z in 1:Z))
 
-
+    println("test 9")
     EP[:eObj] += eCTotalCO2TS
 
-    @expression(EP, eDACcostTOTAL, eCTotalVariableDAC + eTotalCFixedDAC + eTotalCFixedDAC_Energy + eCTotalCO2TS)
+
+    # @expression(EP, eTotalDACCosts, eDACcostTOTAL, eCTotalVariableDAC + eTotalCFixedDAC + eTotalCFixedDAC_Energy + eCTotalCO2TS)
 
     return EP
 end

@@ -26,26 +26,27 @@ function write_dac_co2(path::AbstractString, inputs::Dict, setup::Dict, EP::Mode
 	DAC_ID = dfDac[!,:DAC_ID]
 	n = length(DAC_ID)
 
-	dfCO2 = DataFrame(Resource = repeat(dfDac[!,:Resource],3), 
-	Zone = repeat(dfDac[!,:Zone],3), 
-	CO2 = repeat(["CO2 heat", "CO2 gross", "CO2 net"], inner=n)
+	dfCO2 = DataFrame(Resource = repeat(dfDac[!,:Resource],2), 
+	Zone = repeat(dfDac[!,:Zone],2), 
+	CO2 = repeat(["CO2 gross", "CO2 net"], inner=n)
 	)
 
 
-	CO2_heat = value.(EP[:eDAC_heat_CO2])
+	# CO2_heat = value.(EP[:eDAC_heat_CO2])
 	CO2_gross = -value.(EP[:vCO2_DAC])
-	CO2_net = value.(EP[:eCO2_DAC_net])
+	# CO2_net = value.(EP[:eCO2_DAC_net])
+	CO2_net = -value.(EP[:vCO2_DAC])
 
 	if setup["ParameterScale"] == 1
-		CO2_heat *= ModelScalingFactor
+		# CO2_heat *= ModelScalingFactor
 		CO2_gross *= ModelScalingFactor
 		CO2_net *= ModelScalingFactor
 	end
 
-	nuclear_penalty_from_dac = value.(EP[:ePowerReductionnuclearheat])
-	CSV.write(joinpath(path, "dac_nuke_penalty.csv"), DataFrame(nuclear_penalty_from_dac, :auto), writeheader=false)
-
-	CO2 = DataFrame(vcat(CO2_heat,CO2_gross, CO2_net),:auto)
+	# nuclear_penalty_from_dac = value.(EP[:ePowerReductionnuclearheat])
+	# CSV.write(joinpath(path, "dac_nuke_penalty.csv"), DataFrame(nuclear_penalty_from_dac, :auto), writeheader=false)
+	
+	CO2 = DataFrame(vcat(CO2_gross, CO2_net),:auto)
 
 	#dfPower.AnnualSum .= power * inputs["omega"]
 

@@ -23,7 +23,7 @@ $ef_{y,r}$ where $r$ is any technology in the set of retrofit options of $y$ ($R
 function retrofit(EP::Model, inputs::Dict)
 
 	println("Retrofit Resources Module")
-
+	# SOURCE TECHNOLOGY = technology used to retrofit a resource
 	G = inputs["G"]   # Number of resources (generators, storage, DR, and DERs)
 	RESOURCES = inputs["RESOURCES"] # Set of all resources by name
 	RETRO = inputs["RETRO"] # Set of all retrofit resources by ID

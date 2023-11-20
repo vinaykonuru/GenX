@@ -33,6 +33,7 @@ function storage_symmetric!(EP::Model, inputs::Dict, setup::Dict)
 	end
 
 end
+@doc storage_symmetric!
 
 @doc raw"""
 	storage_symmetric_reserves!(EP::Model, inputs::Dict)

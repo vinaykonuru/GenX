@@ -243,6 +243,6 @@ function generate_model(setup::Dict,inputs::Dict,OPTIMIZER::MOI.OptimizerWithAtt
 		JuMP.write_to_file(EP, filepath)
 		println("Model Printed")
     	end
-
+	println("Finished generating module")
     return EP
 end

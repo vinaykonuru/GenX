@@ -45,7 +45,6 @@ function storage_all!(EP::Model, inputs::Dict, setup::Dict)
 	@expression(EP, eTotalCVarInT[t=1:T], sum(eCVar_in[y,t] for y in STOR_ALL))
 	@expression(EP, eTotalCVarIn, sum(eTotalCVarInT[t] for t in 1:T))
 	EP[:eObj] += eTotalCVarIn
-
 	## Power Balance Expressions ##
 
 	# Term to represent net dispatch from storage in any period

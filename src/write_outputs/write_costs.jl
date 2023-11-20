@@ -98,26 +98,24 @@ function write_costs(path::AbstractString, inputs::Dict, setup::Dict, EP::Model)
 		COMMIT_ZONE = intersect(inputs["COMMIT"], Y_ZONE)
 
 		eCFix = sum(value.(EP[:eCFix][Y_ZONE]))
-		eCFix_DAC = ((setup["DAC"]  > 0)  ? sum(value.(EP[:eCFixed_DAC][Y_ZONE_DAC])) : 0)
-		tempCFix += eCFix + eCFix_DAC
-		tempCTotal += tempCFix
-
+		tempCFix = eCFix
 		tempCVar = sum(value.(EP[:eCVar_out][Y_ZONE,:]))
-		CVar_DAC = ((setup["DAC"]  > 0)  ? sum(value.(EP[:eCTotalVariableDACT][Y_ZONE_DAC])) : 0 )
 		CVar_fuel = sum(value.(EP[:ePlantCFuelOut][Y_ZONE,:]))
-		tempCVar += CVar_DAC + CVar_fuel
-		tempCTotal += tempCVar 
-
 		tempCO2_seq =  (setup["CO2Capture"]  > 0)  ? sum(value.(EP[:ePlantCCO2Sequestration][Y_ZONE])) : 0
-		CCO2seq_DAC = ((setup["DAC"]  > 0)  ? sum(value.(EP[:eCCO2_TS_ByPlant][Y_ZONE_DAC,:])) : 0 )
-		tempCO2_seq += CCO2seq_DAC
-		tempCTotal += tempCO2_seq
-
 		tempCO2_tax = ((setup["CO2Tax"]  > 0)  ? sum(value.(EP[:ePlantCCO2Tax][Y_ZONE])) : 0 )
-		CCO2_DAC = ((setup["CO2Tax"]  & setup["DAC"]  > 0)  ? sum(value.(EP[:ePlantCCO2TaxDAC][Y_ZONE_DAC])) : 0)
-		tempCO2_tax += CCO2_DAC
-		tempCTotal += tempCO2_tax
+		tempCTotal += (eCFix + tempCVar + CVar_fuel + tempCO2_seq + tempCO2_tax)
 
+		if length(Y_ZONE_DAC) != 0
+			eCFix_DAC = ((setup["DAC"]  > 0)  ? sum(value.(EP[:eCFixed_DAC][Y_ZONE_DAC])) : 0)
+			CVar_DAC = ((setup["DAC"]  > 0)  ? sum(value.(EP[:eCTotalVariableDACT][Y_ZONE_DAC])) : 0 )
+			CCO2seq_DAC = ((setup["DAC"]  > 0)  ? sum(value.(EP[:eCCO2_TS_ByPlant][Y_ZONE_DAC,:])) : 0 )
+			CCO2_DAC = ((setup["CO2Tax"]  & setup["DAC"]  > 0)  ? sum(value.(EP[:ePlantCCO2TaxDAC][Y_ZONE_DAC])) : 0)
+			tempCFix += eCFix_DAC
+			tempCVar += CVar_DAC
+			tempCO2_seq += CCO2seq_DAC
+			tempCO2_tax += CCO2_DAC
+			tempCTotal += (eCFix_DAC + CVar_DAC + CCO2seq_DAC + CCO2_DAC)
+		end
 
 		if !isempty(STOR_ALL_ZONE)
 			eCVar_in = sum(value.(EP[:eCVar_in][STOR_ALL_ZONE,:]))
