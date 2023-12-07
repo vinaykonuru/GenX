@@ -11,7 +11,6 @@
 Function for the entry-point for writing the different output files. From here, onward several other functions are called, each for writing specific output files, like costs, capacities, etc.
 """
 function write_outputs(EP::Model, path::AbstractString, setup::Dict, inputs::Dict)
-
 	if !haskey(setup, "OverwriteResults") || setup["OverwriteResults"] == 1
 		# Overwrite existing results if dir exists
 		# This is the default behaviour when there is no flag, to avoid breaking existing code
@@ -179,7 +178,17 @@ function write_outputs(EP::Model, path::AbstractString, setup::Dict, inputs::Dic
 	  println("Time elapsed for writing net revenue is")
 	  println(elapsed_time_net_rev)
 	end
+	JuMP.write_to_file(EP, joinpath(path, "saved_model.mps"))
 	## Print confirmation
 	println("Wrote outputs to $path")
+	# Get variable values
+	all_vars = all_variables(EP)
+	var_values = value.(all_vars)
+
+	# Create DataFrame
+	df_all_vars = DataFrame(name = name.(all_vars), value = var_values)
+
+	# Write DataFrame to CSV file
+	CSV.write(joinpath(path, "solution.csv"), df_all_vars)
 
 end # END output()

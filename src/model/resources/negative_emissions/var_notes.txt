@@ -1,0 +1,12 @@
+vCO2_DAC = tCO2/hour
+vCAP_DAC = tCO2/year
+eDAC_heat = MMBTU/hour
+
+
+vCAPCHARGE_TES = MWh/hr
+vCAPENERGY_TES = MMBTU
+vS = MMBTU
+
+Assumptions:
+Capacity cost: $87.6/MWyr
+Efficiency of power-> heat: 70%

@@ -34,7 +34,9 @@ function load_dac_data!(setup::Dict, path::AbstractString, inputs::Dict)
 	# Store DataFrame of dac input data for use in model
 	inputs["dfDac"] = dac_in
     inputs["DAC"] = dac_in.R_ID
-    
+    # unit commitment variables for DAC
+    inputs["DAC_COMMIT"] = dac_in[dac_in[!,:DAC_COMMIT] .== 1, :R_ID]
+
     # Number of resources
 	#inputs["D"] = length(collect(skipmissing(dac_in[!,:R_ID])))
 
