@@ -52,7 +52,6 @@ function dac!(EP::Model, inputs::Dict, setup::Dict)
     HX_cost_constant = Dac_params["HX_cost_constant"]   #from HX costing and steam extraction
     gj_to_mmbtu_conversion = 0.948
 
-
     DAC_NUCLEAR = inputs["DAC_NUCLEAR"]           # subset of nuclear dac facilities
     DAC_TES = inputs["DAC_TES"]                   # subset of TES dac facilites by DAC_ID (R_ID as listed in DAC data)
     DAC = inputs["DAC"]
@@ -61,6 +60,7 @@ function dac!(EP::Model, inputs::Dict, setup::Dict)
     fuel_CO2 = inputs["fuel_CO2"]
 	MMBTU_per_MW_conversion = 3.412
 
+    HP_COST = 0.5*10^6 #$/MW thermal
     # VARIABLES
     # vCO2_DAC: the amount of hourly capture by a DAC facility, metric ton CO2/h. 
     # vCAP_DAC: the ANNUAL removal capacity of a DAC facility, metric ton CO2
@@ -71,6 +71,7 @@ function dac!(EP::Model, inputs::Dict, setup::Dict)
     vCO2_DAC[y in DAC_ID,t = 1:T] >= 0
     # vHEAT_DAC[y in DAC_ID, t=1:T] >= 0   #MW thermal directed for DAC 
     vHX_DAC[y in DAC_ID] >= 0         #Maximum heat exchanger capacity
+    vCAP_DAC_hp[y in DAC_ID] >= 0     #heat pump capacity
     vCAP_DAC[y in DAC_ID] >= 0
     vDAC_elec_heat[y in DAC_ID, t=1:T] >= 0
     end)
@@ -79,7 +80,7 @@ function dac!(EP::Model, inputs::Dict, setup::Dict)
         
     # the electricity consumption for DAC, MWh/t CO2
     @expression(EP, eDAC_elec[y in DAC_ID, t = 1:T], vCO2_DAC[y,t] * dfDac[y,:Electricity_MWh_per_CO2_metric_ton])
-    DAC_heat_pump_COP = 3 # efficiency of electricity to heat conversion
+    DAC_heat_pump_COP = 2 # efficiency of electricity to heat conversion
 
     # the use of heat resources (e.g., natural gas) may result in additional CO2 emissions as DAC may not capture the CO2 from the heat resources, the co2 content from heat resouces times (1 - capture rate) = emitted co2 from heat resource
     # for TES, we don't use a heat resource; we use power from the grid
@@ -101,16 +102,15 @@ function dac!(EP::Model, inputs::Dict, setup::Dict)
 
     end
     if !isempty(DAC_TES)
-        # dac_TES!(EP, inputs, setup) # method to add constraints for TES colocated with DAC
+        dac_TES!(EP, inputs, setup) # method to add constraints for TES colocated with DAC
     end
     heat_pump = 2 # 0 = TES only, 1 = heat pump, 2 = heat pump + TES
     # heat and power balance
     if heat_pump == 2
-        hp_COP = 1
-        @constraint(EP, cDACHeatBalance[y in DAC_TES, t in 1:T], eDAC_heat[y,t] == vDAC_elec_heat[y,t] * hp_COP * MMBTU_per_MW_conversion + EP[:vOUT_TES][y,t])
+        @constraint(EP, cDACHeatBalance[y in DAC_TES, t in 1:T], eDAC_heat[y,t] == vDAC_elec_heat[y,t] * DAC_heat_pump_COP * MMBTU_per_MW_conversion + EP[:vOUT_TES][y,t])
         @expression(EP, ePowerBalanceDAC[t=1:T, z=1:Z], sum(eDAC_elec[y,t] + vDAC_elec_heat[y,t] for y in (dfDac[dfDac[!,:Zone].==z,:][!,:DAC_ID])))
     elseif heat_pump == 1
-        @constraint(EP, cDACHeatBalance[y in DAC_TES, t in 1:T], eDAC_heat[y,t] == vDAC_elec_heat[y,t] * hp_COP * MMBTU_per_MW_conversion)
+        @constraint(EP, cDACHeatBalance[y in DAC_TES, t in 1:T], eDAC_heat[y,t] == vDAC_elec_heat[y,t] * DAC_heat_pump_COP * MMBTU_per_MW_conversion)
         @expression(EP, ePowerBalanceDAC[t=1:T, z=1:Z], sum(eDAC_elec[y,t] + vDAC_elec_heat[y,t] for y in (dfDac[dfDac[!,:Zone].==z,:][!,:DAC_ID])))
     else
         @constraint(EP, cDACHeatBalance[y in DAC_TES, t in 1:T], eDAC_heat[y,t] == EP[:vOUT_TES][y,t])
@@ -119,6 +119,7 @@ function dac!(EP::Model, inputs::Dict, setup::Dict)
     println("test 4")
 
     @constraint(EP, cDACHeatMax[y in DAC_TES, t in 1:T], eDAC_heat[y,t] <= vHX_DAC[y])
+    @constraint(EP, cDACHPMax[y in DAC_TES, t in 1:T], vDAC_elec_heat[y,t] <= vCAP_DAC_hp[y])
 
     # the power used for DAC must also go into a power balance equation
 
@@ -135,16 +136,16 @@ function dac!(EP::Model, inputs::Dict, setup::Dict)
 	@expression(EP, eTotalCFixedDAC, sum(eCFixed_DAC[y] for y in DAC_ID))
 	EP[:eObj] += eTotalCFixedDAC
 
-    # Fixed DAC cost for energy (this covers capex of heat pump and like heat exchangers for the nuclear coupling case)
-    @expression(EP, eCFixed_DAC_Energy[y in DAC_ID], HX_cost_multiplier*vHX_DAC[y] + HX_cost_constant + dfDac[y, :Energy_Fix_Cost_per_yr])   #Annualized CAPEX cost 
+    # Fixed DAC cost for energy (this covers capex of heat pump and like heat exchangers
+    @expression(EP, eCFixed_DAC_Energy[y in DAC_ID], HX_cost_multiplier*vHX_DAC[y] + HX_cost_constant + vCAP_DAC_hp[y] * HP_COST * 0.0899 + dfDac[y, :Energy_Fix_Cost_per_yr])   #Annualized CAPEX cost 
 	# total fixed costs for all the DAC
 	@expression(EP, eTotalCFixedDAC_Energy, sum(eCFixed_DAC_Energy[y] for y in DAC_ID))
 	EP[:eObj] += eTotalCFixedDAC_Energy
 
     println("test 6")
-    #heatpump cost in case of solid sorbent grid based - THIS IS ALL INCORPORATED IN THE Fix_Cost_per_tCO2_yr IN THE DAC SHEET FOR ELECTRIC HEAT PUMP SORBENT DAC BUT SHOWN BELOW TO REFLECT HOW THE 14 NUMBER CAME ABOUT
-    # heatpump_cost_perMW = 0.5e6  #half a million per MW of heat pump
-    # heatpump_mw_pertco2 = 2.72 #2.72 MW thermal per tco2 which is based on 9.8 GJ per tco2 from young et al and conversion using 0.2778 gj to mw conversion
+    #heat pump cost in case of solid sorbent grid based - THIS IS ALL INCORPORATED IN THE Fix_Cost_per_tCO2_yr IN THE DAC SHEET FOR ELECTRIC HEAT PUMP SORBENT DAC BUT SHOWN BELOW TO REFLECT HOW THE 14 NUMBER CAME ABOUT
+    # heatpump_cost_per_MW = 0.5e6  #half a million per MW of heat pump
+    # heatpump_mw_per_tco2 = 2.72 #2.72 MW thermal per tco2 which is based on 9.8 GJ per tco2 from young et al and conversion using 0.2778 gj to mw conversion
     # annuity factor = 0.0899
     # heatpump_cost = (1/8760)*heatpump_mw_pertco2*heatpump_cost_perMW*annuity  1/8760 because vcap dac is annual removal capacity so divide to get hourly removal
 

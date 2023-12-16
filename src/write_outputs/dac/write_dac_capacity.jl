@@ -26,8 +26,8 @@ function write_dac_capacity(path::AbstractString, inputs::Dict, setup::Dict, EP:
 	dfDac = inputs["dfDac"]
 	#MultiStage = setup["MultiStage"]
 	NEW_CAP = dfDac[dfDac[!,:NEW_CAP] .==1,:R_ID]
-	# TES = inputs["DAC_TES"]
-	# DAC_COMMIT = dfDac[dfDac[!,:DAC_COMMIT] .==1,:R_ID]
+	TES = inputs["DAC_TES"]
+	DAC_COMMIT = dfDac[dfDac[!,:DAC_COMMIT] .==1,:R_ID]
 	capdDac = zeros(size(dfDac[!,:Resource]))
 	for i in  NEW_CAP
 		capdDac[i] = value(EP[:vCAP_DAC][i])

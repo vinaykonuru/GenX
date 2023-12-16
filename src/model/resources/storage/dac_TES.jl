@@ -1,16 +1,7 @@
 # thermal storage for DAC facility, different from asymmetric storage because all output from the storage goes to the DAC
 # doesn't incorporate into the general charge balance
 
-# CONSTANTS
-# Eff_Down = 0.92
-# Eff_Up = 0.92
-# eTotalCapEnergy = capacity = 4MW
-# eTotalCap = max power discharge
-# cost per unit capacity
 
-# to do:
-# find MW to MMBTU conversion for TES, multiply this constant for all vCHARGE
-# WRAP AROUND CONSTRAINT FOR TES CHARGE
 function dac_TES!(EP::Model, inputs::Dict, setup::Dict)
 	println("DAC TES Module")
 
@@ -132,25 +123,6 @@ function dac_TES!(EP::Model, inputs::Dict, setup::Dict)
 	# charging capacity of the TES can't exceed the max charge rate, makes no difference because optimal charge cap at 2233MW
 	# @constraint(EP, cMaxChargeRate_TES[y in DAC_TES], vCAPCHARGE_TES[y] <= max_charge_rate)
 
-	# # Storage discharge and charge power (and reserve contribution) related constraints:
-	# if Reserves == 1
-	# 	storage_all_reserves!(EP, inputs)
-	# else
-	# 	# Note: maximum charge rate is also constrained by maximum charge power capacity, but as this differs by storage type,
-	# 	# this constraint is set in functions below for each storage type
-
-	# 	# Maximum discharging rate must be less than power rating OR available stored energy in the prior period, whichever is less
-	# 	# wrapping from end of sample period to start of sample period for energy capacity constraint
-	# 	@constraints(EP, begin
-	# 		[y in DAC_TES, t=1:T], EP[:vP][y,t] <= EP[:eTotalCap][y]
-	# 		[y in DAC_TES, t=1:T], EP[:vP][y,t] <= vS_TES[y, hoursbefore(hours_per_subperiod,t,1)]*dfGen[y,:Eff_Down]
-	# 	end)
-	# end
-	#From co2 Policy module
-	# @expression(EP, eELOSSByZone[z=1:Z],
-	# 	sum(EP[:eELOSS][y] for y in intersect(DAC_TES, dfGen[dfGen[!,:Zone].==z,:R_ID]))
-	# )
-	# power balance:
     @expression(EP, ePowerBalanceDAC_TES[t=1:T, z=1:Z], sum(vCHARGE_TES[y,t] for y in (dfDac[dfDac[!,:Zone].==z,:][!,:DAC_ID])))
 	EP[:ePowerBalance] -= (ePowerBalanceDAC_TES)
 
