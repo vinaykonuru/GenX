@@ -1,24 +1,17 @@
 # thermal storage for DAC facility, different from asymmetric storage because all output from the storage goes to the DAC
 # doesn't incorporate into the general charge balance
 
-# CONSTANTS
-# Eff_Down = 0.92
-# Eff_Up = 0.92
-# eTotalCapEnergy = capacity = 4MW
-# eTotalCap = max power discharge
-# cost per unit capacity
 
-# to do:
-# find MW to MMBTU conversion for TES, multiply this constant for all vCHARGE
-# WRAP AROUND CONSTRAINT FOR TES CHARGE
 function dac_TES!(EP::Model, inputs::Dict, setup::Dict)
 	println("DAC TES Module")
 
     dfGen = inputs["dfGen"]
+	dfDac = inputs["dfDac"]
+
 	G = inputs["G"]     # Number of resources (generators, storage, DR, and DERs)
 	T = inputs["T"]     # Number of time steps (hours)
 	Z = inputs["Z"]     # Number of zones
-	
+	max_charge_rate = 4000 #MW
 	DAC_TES = inputs["DAC_TES"] # DAC_ID of DAC sites with TES
 	STOR_TES = inputs["STOR_TES"] # R_ID of TES storage sites from generators_data, ASSIGN A DAC_ID TO THE TES IN GENERATORS
 
@@ -26,7 +19,8 @@ function dac_TES!(EP::Model, inputs::Dict, setup::Dict)
 	INTERIOR_SUBPERIODS = inputs["INTERIOR_SUBPERIODS"]
 
 	hours_per_subperiod = inputs["hours_per_subperiod"] #total number of hours per subperiod
-	MMBTU_per_MW_conversion = 3.412 # assumes 100% efficiency
+	efficiency_TES = 0.7 # efficiency of TES
+	MMBTU_per_MW_conversion = 3.412 * efficiency_TES
 	### Variables ###
 	# New installed energy capacity of resource "y"
 	@variable(EP, vCAPENERGY_TES[y in DAC_TES] >= 0) # units of MMBTU
@@ -34,6 +28,7 @@ function dac_TES!(EP::Model, inputs::Dict, setup::Dict)
 	# New installed charge capacity of resource "y"
 	@variable(EP, vCAPCHARGE_TES[y in DAC_TES] >= 0) # units of MWh/Hr
 	println("test 0.1")
+	@variable(EP, vCAPDISCHARGE_TES[y in DAC_TES] >= 0) # units of MWh/Hr
 
 	# Storage level of resource "y" at hour "t" [MWh] on zone "z" - unbounded
 	@variable(EP, vS_TES[y in DAC_TES, t=1:T] >= 0);
@@ -42,6 +37,7 @@ function dac_TES!(EP::Model, inputs::Dict, setup::Dict)
 	# Energy withdrawn from grid by resource "y" at hour "t" [MWh] on zone "z"
 	@variable(EP, vCHARGE_TES[y in DAC_TES, t=1:T] >= 0);
 	println("test 0.3")
+	@variable(EP, vOUT_TES[y in DAC_TES, t=1:T] >= 0);
 
 	### Expressions ###
 	# Losses - vDacpower gives the output of the TES (not taking into account for now)
@@ -64,16 +60,20 @@ function dac_TES!(EP::Model, inputs::Dict, setup::Dict)
 
 	# Costs for capacity
 	@expression(EP, eCFixEnergy_TES[y in DAC_TES],
-		(dfGen[dfGen.DAC_ID.==y,:Inv_Cost_per_MWhyr][1]+ dfGen[dfGen.DAC_ID.==y,:Fixed_OM_Cost_per_MWhyr][1])*vCAPENERGY_TES[y])
+		(dfGen[dfGen.DAC_ID.==y,:Inv_Cost_per_MWhyr][1]+ dfGen[dfGen.DAC_ID.==y,:CAPEX_per_MWh_yr][1])*vCAPENERGY_TES[y])
 	println("test 0.8")
 	@expression(EP, eTotalCFixEnergy_TES, sum(eCFixEnergy_TES[y] for y in DAC_TES))
 	println("test1")
 
-	# Costs for power
+	# Costs for max charging rate
 	@expression(EP, eCFixCharge_TES[y in DAC_TES],
-	(dfGen[dfGen.DAC_ID.==y,:Inv_Cost_per_MWyr][1] + dfGen[dfGen.DAC_ID.==y,:Fixed_OM_Cost_per_MWyr][1])*vCAPENERGY_TES[y])
+	(dfGen[dfGen.DAC_ID.==y,:Inv_Cost_per_MWyr][1] + dfGen[dfGen.DAC_ID.==y,:CAPEX_per_MW_Charge_yr][1])*vCAPCHARGE_TES[y])
+	# Costs for max discharging rate
+	@expression(EP, eCFixDischarge_TES[y in DAC_TES],
+	(dfGen[dfGen.DAC_ID.==y,:Inv_Cost_per_MWyr][1] + dfGen[dfGen.DAC_ID.==y,:CAPEX_per_MW_Discharge_yr][1])*vCAPDISCHARGE_TES[y])
 	println("test 1.1")
-	@expression(EP, eTotalCFixCharge_TES, sum(eCFixCharge_TES[y] for y in DAC_TES))
+
+	@expression(EP, eTotalCFixCharge_TES, sum(eCFixCharge_TES[y] + eCFixDischarge_TES[y] for y in DAC_TES))
 	# add total TES costs to objective
 	println("test 1.2")
 
@@ -94,51 +94,37 @@ function dac_TES!(EP::Model, inputs::Dict, setup::Dict)
 
 	println(dfGen[dfGen.DAC_ID.==1,:Eff_Down][1])
 	@constraint(EP, cSoCBalStart_TES[t in START_SUBPERIODS, y in DAC_TES], vS_TES[y,t] ==
-		vS_TES[y,t+hours_per_subperiod-1] - (1/dfGen[dfGen.DAC_ID.==y,:Eff_Down][1])*EP[:eDAC_heat][y,t] + 
-		1/dfGen[dfGen.DAC_ID.==y,:Eff_Up][1]*eCHARGE_TES_HEAT[y,t] - dfGen[dfGen.DAC_ID.==y,:Self_Disch][1]*vS_TES[y,t+hours_per_subperiod-1]
+		vS_TES[y,t+hours_per_subperiod-1] - 1/dfGen[dfGen.DAC_ID.==y,:Eff_Down][1]*vOUT_TES[y,t] + 
+		1/dfGen[dfGen.DAC_ID.==y,:Eff_Up][1]*eCHARGE_TES_HEAT[y,t] - dfGen[dfGen.DAC_ID.==y,:Self_Disch][1]*vS_TES[y,t+hours_per_subperiod-1]	
 	)
+	
 	println("test 1.4")
 	# SOC INTERIOR
 	@constraint(EP, cSoCBalInterior_TES[t in INTERIOR_SUBPERIODS, y in DAC_TES], vS_TES[y,t] ==
-	vS_TES[y,t-1] - 1/dfGen[dfGen.DAC_ID.==y,:Eff_Down][1]*EP[:eDAC_heat][y,t] + 
-	dfGen[dfGen.DAC_ID.==y,:Eff_Up][1]*eCHARGE_TES_HEAT[y,t] - dfGen[dfGen.DAC_ID.==y,:Self_Disch][1]*vS_TES[y,t-1]
+	vS_TES[y,t-1] - 1/dfGen[dfGen.DAC_ID.==y,:Eff_Down][1]*vOUT_TES[y,t] + 
+	1/dfGen[dfGen.DAC_ID.==y,:Eff_Up][1]*eCHARGE_TES_HEAT[y,t] - dfGen[dfGen.DAC_ID.==y,:Self_Disch][1]*vS_TES[y,t-1]
 	)
+
 	println("test 2")
 	# Maximum energy stored must be less than energy capacity
 	@constraint(EP, cMaxEnergyCapacity_TES[y in DAC_TES, t in 1:T], vS_TES[y,t] <= vCAPENERGY_TES[y])
 	println("test 2.1")
-	# Assume charge and discharge are symmetric for now
+
+	@constraint(EP, cHeatBalance[y in DAC_TES, t in 1:T], vOUT_TES[y,t] <= vS_TES[y,hoursbefore(hours_per_subperiod,t,1)])
 
 	# charge rate <= max charge
 	@constraint(EP, cMaxEnergyCharge_TES[y in DAC_TES, t in 1:T], vCHARGE_TES[y,t] <= vCAPCHARGE_TES[y])
 	println("test 2.2")
-	# discharge rate <= max charge
-	@constraint(EP, cMaxEnergyDischarge_TES[y in DAC_TES, t in 1:T], EP[:eDAC_heat][y,t] / MMBTU_per_MW_conversion <= vCAPCHARGE_TES[y])
+
+	# discharge rate <= max discharge (units of MW)
+	@constraint(EP, cMaxEnergyDischarge_TES[y in DAC_TES, t in 1:T], vOUT_TES[y,t] / MMBTU_per_MW_conversion <= vCAPDISCHARGE_TES[y])
 	println("test 2.3")
-	# charge + discharge rate <= max charge
-	@constraint(EP, cMaxEnergyTotal_TES[y in DAC_TES, t in 1:T], EP[:eDAC_heat][y,t] / MMBTU_per_MW_conversion + vCHARGE_TES[y,t] <= vCAPCHARGE_TES[y])
-	println("test 2.4")
 
-	# # Storage discharge and charge power (and reserve contribution) related constraints:
-	# if Reserves == 1
-	# 	storage_all_reserves!(EP, inputs)
-	# else
-	# 	# Note: maximum charge rate is also constrained by maximum charge power capacity, but as this differs by storage type,
-	# 	# this constraint is set in functions below for each storage type
+	# charging capacity of the TES can't exceed the max charge rate, makes no difference because optimal charge cap at 2233MW
+	# @constraint(EP, cMaxChargeRate_TES[y in DAC_TES], vCAPCHARGE_TES[y] <= max_charge_rate)
 
-	# 	# Maximum discharging rate must be less than power rating OR available stored energy in the prior period, whichever is less
-	# 	# wrapping from end of sample period to start of sample period for energy capacity constraint
-	# 	@constraints(EP, begin
-	# 		[y in DAC_TES, t=1:T], EP[:vP][y,t] <= EP[:eTotalCap][y]
-	# 		[y in DAC_TES, t=1:T], EP[:vP][y,t] <= vS_TES[y, hoursbefore(hours_per_subperiod,t,1)]*dfGen[y,:Eff_Down]
-	# 	end)
-	# end
-	#From co2 Policy module
-	# @expression(EP, eELOSSByZone[z=1:Z],
-	# 	sum(EP[:eELOSS][y] for y in intersect(DAC_TES, dfGen[dfGen[!,:Zone].==z,:R_ID]))
-	# )
-	# power balance:
-
+    @expression(EP, ePowerBalanceDAC_TES[t=1:T, z=1:Z], sum(vCHARGE_TES[y,t] for y in (dfDac[dfDac[!,:Zone].==z,:][!,:DAC_ID])))
+	EP[:ePowerBalance] -= (ePowerBalanceDAC_TES)
 
 	println("test 3")
 end

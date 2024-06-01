@@ -27,7 +27,7 @@ function write_dac_capacity(path::AbstractString, inputs::Dict, setup::Dict, EP:
 	#MultiStage = setup["MultiStage"]
 	NEW_CAP = dfDac[dfDac[!,:NEW_CAP] .==1,:R_ID]
 	TES = inputs["DAC_TES"]
-	# DAC_COMMIT = dfDac[dfDac[!,:DAC_COMMIT] .==1,:R_ID]
+	DAC_COMMIT = dfDac[dfDac[!,:DAC_COMMIT] .==1,:R_ID]
 	capdDac = zeros(size(dfDac[!,:Resource]))
 	for i in  NEW_CAP
 		capdDac[i] = value(EP[:vCAP_DAC][i])
@@ -46,32 +46,71 @@ function write_dac_capacity(path::AbstractString, inputs::Dict, setup::Dict, EP:
 	dfCapDac.StartCap = dfCapDac.StartCap * scale_factor
 	dfCapDac.NewCap = dfCapDac.NewCap * scale_factor
 	dfCapDac.EndCap = dfCapDac.EndCap * scale_factor
-	# println(dfCapDac)
-	# println(value.(EP[:vCO2_DAC]))
-	#dfCapDac = vcat(dfCapDac, total)
+
 	CSV.write(joinpath(path, "capacity_dac.csv"), dfCapDac)
-	TES_capacity = zeros(size(dfDac[!,:Resource]))
-	TES_charge_max = zeros(size(dfDac[!,:Resource]))
-	println(value.(EP[:vCAPENERGY_TES][1]))
-	println(TES)
-	for i in TES
-		TES_capacity[i] = value(EP[:vCAPENERGY_TES][i])
-		TES_charge_max[i] = value(EP[:vCAPCHARGE_TES][i])
-	end
-	println(TES_capacity)
-	println(typeof(TES_charge_max))
-	println(value.(EP[:vS_TES]))
+	# TES_capacity = zeros(size(dfDac[!,:Resource]))
+	# TES_charge_max = zeros(size(dfDac[!,:Resource]))
+	# println(value.(EP[:vCAPENERGY_TES][1]))
+	# println(TES)
+	# for i in TES
+	# 	TES_capacity[i] = value(EP[:vCAPENERGY_TES][i])
+	# 	TES_charge_max[i] = value(EP[:vCAPCHARGE_TES][i])
+	# end
 
-	dfTES_DAC = DataFrame(
-		Resource = dfDac[!, :Resource],
-		Zone = dfDac[!, :Zone],
-		TES_Capacity = TES_capacity,
-		TES_Charge = TES_charge_max
-	)
-	dfTES_DAC.TES_Capacity .* scale_factor
-	dfTES_DAC.TES_Charge .* scale_factor
+	# TES_SOC = value.(EP[:vS_TES])
+	# TES_CHARGE = value.(EP[:eCHARGE_TES_HEAT])
+	# TES_DISCHARGE = value.(EP[:eDAC_heat])
+	# println(typeof(TES_SOC))
+	# println(typeof(TES_CHARGE))
+	# println(typeof(TES_DISCHARGE))
 
-	CSV.write(joinpath(path, "capacity_tes_dac.csv"), dfTES_DAC)
+	# println("TES SOC")
+	# keys_SOC = collect(keys(TES_SOC))
+	# values_SOC = [TES_SOC[k] for k in keys(TES_SOC)]
+	# dim1_TES_SOC = [k[1] for k in keys_SOC]
+	# dim2_TES_SOC = [k[2] for k in keys_SOC]
+	# TES_SOC_df = DataFrame(
+	# 	Resource = dim1_TES_SOC,
+	# 	Zone = dim2_TES_SOC,
+	# 	SOC = values_SOC
+	# )
+	# println("TES CHARGE")
+	# keys_TES_CHARGE = collect(keys(TES_CHARGE))
+	# values_TES_CHARGE = [TES_CHARGE[k] for k in keys(TES_CHARGE)]
+	# dim1_TES_CHARGE = [k[1] for k in keys_TES_CHARGE]
+	# dim2_TES_CHARGE = [k[2] for k in keys_TES_CHARGE]
+	# TES_CHARGE_df = DataFrame(
+	# 	Resource = dim1_TES_CHARGE,
+	# 	Zone = dim2_TES_CHARGE,
+	# 	CHARGE = values_TES_CHARGE
+	# )
+
+
+	# println("TES DISCHARGE")
+	# keys_TES_DISCHARGE = collect(keys(TES_DISCHARGE))
+	# values_TES_DISCHARGE = [TES_CHARGE[k] for k in keys(TES_CHARGE)]
+	# dim1_TES_DISCHARGE = [k[1] for k in keys_TES_DISCHARGE]
+	# dim2_TES_DISCHARGE = [k[2] for k in keys_TES_DISCHARGE]
+	# TES_DISCHARGE_df = DataFrame(
+	# 	Resource = dim1_TES_DISCHARGE,
+	# 	Zone = dim2_TES_DISCHARGE,
+	# 	CHARGE = values_TES_DISCHARGE
+	# )
+
+	# CSV.write(joinpath(path, "tes_SOC.csv"), TES_SOC_df)
+	# CSV.write(joinpath(path, "tes_charge.csv"), TES_CHARGE_df)
+	# CSV.write(joinpath(path, "tes_discharge.csv"), TES_DISCHARGE_df)
+
+	# dfTES_DAC = DataFrame(
+	# 	Resource = dfDac[!, :Resource],
+	# 	Zone = dfDac[!, :Zone],
+	# 	TES_Capacity = TES_capacity,
+	# 	TES_Charge = TES_charge_max
+	# )
+	# dfTES_DAC.TES_Capacity .* scale_factor
+	# dfTES_DAC.TES_Charge .* scale_factor
+
+	# CSV.write(joinpath(path, "capacity_tes_dac.csv"), dfTES_DAC)
 
     # write the dual capex cost if fix cost = 0
 	#CapexDAC = zeros(size(dfDac[!,:Resource]))
@@ -122,5 +161,8 @@ function write_dac_capacity(path::AbstractString, inputs::Dict, setup::Dict, EP:
 	dfCost[!,Symbol("Total")] = [cDacTotal, cFix, cFix_E, cCO2_seq]
 
 	CSV.write(joinpath(path, "Dac_costs.csv"), dfCost)
-
+	# save all variables for debugging
+	x = all_variables(EP)
+	# all_vars = DataFrame(name = variable_name.(x), Value = value.(x))
+	# CSV.write(joinpath(path, "all_vars.csv"), all_vars)
 end
